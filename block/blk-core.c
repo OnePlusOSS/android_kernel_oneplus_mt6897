@@ -54,6 +54,12 @@
 #include "blk-throttle.h"
 #include "blk-ioprio.h"
 
+#ifdef CONFIG_BLK_MQ_USE_LOCAL_THREAD
+extern long bio_cnt;           // total bio sumbit
+extern long rt_bio_cnt;        // total rt bio sumbit, part of bio_cnt
+extern long ux_bio_cnt;        // total ux bio sumbit, part of rt_bio_cnt
+#endif
+
 struct dentry *blk_debugfs_root;
 
 EXPORT_TRACEPOINT_SYMBOL_GPL(block_bio_remap);
@@ -809,12 +815,27 @@ end_io:
 }
 EXPORT_SYMBOL(submit_bio_noacct);
 
+#ifdef CONFIG_BLK_MQ_USE_LOCAL_THREAD
+extern bool test_task_ux(struct task_struct *task);
+#endif
+
 static void bio_set_ioprio(struct bio *bio)
 {
 	/* Nobody set ioprio so far? Initialize it based on task's nice value */
 	if (IOPRIO_PRIO_CLASS(bio->bi_ioprio) == IOPRIO_CLASS_NONE)
 		bio->bi_ioprio = get_current_ioprio();
 	blkcg_set_ioprio(bio);
+#ifdef CONFIG_BLK_MQ_USE_LOCAL_THREAD
+	bio_cnt++;
+
+	if (IOPRIO_PRIO_CLASS(bio->bi_ioprio) == IOPRIO_CLASS_RT) {
+		rt_bio_cnt++;
+	} else if (test_task_ux(current)) {
+		bio->bi_ioprio =  IOPRIO_PRIO_VALUE(IOPRIO_CLASS_RT, 4);
+		rt_bio_cnt++;
+		ux_bio_cnt++;
+	}
+#endif
 }
 
 /**
@@ -1213,6 +1234,9 @@ EXPORT_SYMBOL_GPL(blk_io_schedule);
 
 int __init blk_dev_init(void)
 {
+#ifdef CONFIG_BLK_MQ_USE_LOCAL_THREAD
+	const char *config = of_blk_feature_read("kblockd_ux_unbound_enable");
+#endif
 	BUILD_BUG_ON((__force u32)REQ_OP_LAST >= (1 << REQ_OP_BITS));
 	BUILD_BUG_ON(REQ_OP_BITS + REQ_FLAG_BITS > 8 *
 			sizeof_field(struct request, cmd_flags));
@@ -1222,6 +1246,12 @@ int __init blk_dev_init(void)
 			   __alignof__(struct request_queue)) !=
 		     sizeof(struct request_queue));
 
+#ifdef CONFIG_BLK_MQ_USE_LOCAL_THREAD
+	if (config && strcmp(config, "y") == 0)
+		kblockd_workqueue = alloc_workqueue("kblockd",
+					    WQ_MEM_RECLAIM | WQ_HIGHPRI | WQ_UX | WQ_UNBOUND, 0);
+	else
+#endif
 	/* used for unplugging and affects IO latency/throughput - HIGHPRI */
 	kblockd_workqueue = alloc_workqueue("kblockd",
 					    WQ_MEM_RECLAIM | WQ_HIGHPRI, 0);

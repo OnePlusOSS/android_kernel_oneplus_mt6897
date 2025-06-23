@@ -323,6 +323,10 @@ void thermal_zone_device_critical(struct thermal_zone_device *tz)
 
 	dev_emerg(&tz->device, "%s: critical temperature reached, "
 		  "shutting down\n", tz->type);
+	//#ifdef OPLUS_BUG_STABILITY
+	//wanghao@bootable.bootloader add for avoid wifi ntc force shutdown
+	return;
+	//#endif
 
 	hw_protection_shutdown("Temperature too high", poweroff_delay_ms);
 }

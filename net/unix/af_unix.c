@@ -2675,7 +2675,6 @@ static struct sk_buff *manage_oob(struct sk_buff *skb, struct sock *sk,
 				skb = skb_peek_next(skb, &sk->sk_receive_queue);
 			}
 		}
-
 		spin_unlock(&sk->sk_receive_queue.lock);
 
 		if (unlinked_skb) {

@@ -3,6 +3,20 @@
 # Makefile for the linux memory manager.
 #
 
+PGO_PROFILE_slab_common.o := n
+PGO_PROFILE_slob.o := n
+PGO_PROFILE_slab.o := n
+PGO_PROFILE_slub.o := n
+PGO_PROFILE_page_alloc.o := n
+PGO_PROFILE_debug-pagealloc.o := n
+PGO_PROFILE_kmemleak.o := n
+PGO_PROFILE_memcontrol.o := n
+PGO_PROFILE_mmzone.o := n
+PGO_PROFILE_vmstat.o := n
+PGO_PROFILE_failslab.o := n
+
+PGO_PROFILE_zsmalloc.o := n
+
 KASAN_SANITIZE_slab_common.o := n
 KASAN_SANITIZE_slab.o := n
 KASAN_SANITIZE_slub.o := n
@@ -144,3 +158,6 @@ obj-$(CONFIG_IO_MAPPING) += io-mapping.o
 obj-$(CONFIG_HAVE_BOOTMEM_INFO_NODE) += bootmem_info.o
 obj-$(CONFIG_GENERIC_IOREMAP) += ioremap.o
 obj-$(CONFIG_SHRINKER_DEBUG) += shrinker_debug.o
+obj-$(CONFIG_BLOCKIO_UX_OPT) += fileprotect.o
+obj-$(CONFIG_CONT_PTE_HUGEPAGE) += cont_pte_hugepage.o
+

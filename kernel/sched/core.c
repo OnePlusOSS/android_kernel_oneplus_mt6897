@@ -65,6 +65,10 @@
 #include <linux/wait_api.h>
 #include <linux/workqueue_api.h>
 
+#if IS_ENABLED(CONFIG_OPLUS_SCHED_TUNE)
+#include <../kernel/oplus_cpu/sched/sched_tune/tune.h>
+#endif
+
 #ifdef CONFIG_PREEMPT_DYNAMIC
 # ifdef CONFIG_GENERIC_ENTRY
 #  include <linux/entry-common.h>
@@ -98,7 +102,7 @@
 #include <trace/hooks/sched.h>
 #include <trace/hooks/dtask.h>
 #include <trace/hooks/cgroup.h>
-
+#include "../locking/locking_main.h"
 /*
  * Export tracepoints that act as a bare tracehook (ie: have no trace event
  * associated with them) to allow external modules to probe them.
@@ -6884,6 +6888,7 @@ static void __sched notrace __schedule(unsigned int sched_mode)
 #endif
 
 	trace_android_rvh_schedule(sched_mode, prev, next, rq);
+	locking_record_switch_in_cs(prev);
 	if (likely(prev != next)) {
 		rq->nr_switches++;
 		/*
@@ -10669,6 +10674,9 @@ void sched_move_task(struct task_struct *tsk)
 	struct rq_flags rf;
 	struct rq *rq;
 
+#if IS_ENABLED(CONFIG_OPLUS_SCHED_TUNE)
+	schedtune_attach(tsk);
+#endif
 	rq = task_rq_lock(tsk, &rf);
 	update_rq_clock(rq);
 
@@ -10709,6 +10717,9 @@ cpu_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 	struct task_group *tg;
 
 	if (!parent) {
+#if IS_ENABLED(CONFIG_OPLUS_SCHED_TUNE)
+		schedtune_root_alloc();
+#endif
 		/* This is early initialization for the top cgroup */
 		return &root_task_group.css;
 	}
@@ -10716,7 +10727,9 @@ cpu_cgroup_css_alloc(struct cgroup_subsys_state *parent_css)
 	tg = sched_create_group(parent);
 	if (IS_ERR(tg))
 		return ERR_PTR(-ENOMEM);
-
+#if IS_ENABLED(CONFIG_OPLUS_SCHED_TUNE)
+	schedtune_alloc(tg, parent_css);
+#endif
 	return &tg->css;
 }
 
@@ -10757,6 +10770,9 @@ static void cpu_cgroup_css_free(struct cgroup_subsys_state *css)
 	 * Relies on the RCU grace period between css_released() and this.
 	 */
 	sched_unregister_group(tg);
+#if IS_ENABLED(CONFIG_OPLUS_SCHED_TUNE)
+	schedtune_free(css);
+#endif
 }
 
 #ifdef CONFIG_RT_GROUP_SCHED
@@ -11428,6 +11444,13 @@ static struct cftype cpu_legacy_files[] = {
 		.read_u64 = cpu_uclamp_ls_read_u64,
 		.write_u64 = cpu_uclamp_ls_write_u64,
 	},
+#if IS_ENABLED(CONFIG_OPLUS_SCHED_TUNE)
+	{
+		.name = "schedtune.boost",
+		.read_s64 = schedtune_boost_read,
+		.write_s64 = schedtune_boost_write,
+	},
+#endif
 #endif
 	{ }	/* Terminate */
 };
@@ -11631,6 +11654,14 @@ static struct cftype cpu_files[] = {
 		.flags = CFTYPE_NOT_ON_ROOT,
 		.read_u64 = cpu_uclamp_ls_read_u64,
 		.write_u64 = cpu_uclamp_ls_write_u64,
+	},
+#endif
+#if IS_ENABLED(CONFIG_OPLUS_SCHED_TUNE)
+	{
+		.name = "schedtune.boost",
+		.flags = CFTYPE_NOT_ON_ROOT,
+		.read_s64 = schedtune_boost_read,
+		.write_s64 = schedtune_boost_write,
 	},
 #endif
 	{ }	/* terminate */

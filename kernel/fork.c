@@ -920,8 +920,35 @@ static void check_mm(struct mm_struct *mm)
 #endif
 }
 
+#ifndef CONFIG_CONT_PTE_HUGEPAGE
 #define allocate_mm()	(kmem_cache_alloc(mm_cachep, GFP_KERNEL))
 #define free_mm(mm)	(kmem_cache_free(mm_cachep, (mm)))
+#else
+#define __allocate_mm()	(kmem_cache_alloc(mm_cachep, GFP_KERNEL))
+#define __free_mm(mm)	(kmem_cache_free(mm_cachep, (mm)))
+
+static inline void *allocate_mm(void)
+{
+	struct mm_struct *mm = __allocate_mm();
+
+	if (unlikely(!mm))
+		return NULL;
+
+	mm->android_kabi_reserved1 = (u64)kzalloc(sizeof(struct chp_vma_name_address),
+						  GFP_KERNEL);
+	if (!mm->android_kabi_reserved1) {
+		__free_mm(mm);
+		return NULL;
+	}
+	return mm;
+}
+
+static inline void free_mm(struct mm_struct *mm)
+{
+	kfree((void *)(mm->android_kabi_reserved1));
+	__free_mm(mm);
+}
+#endif
 
 /*
  * Called when the last reference to the mm
@@ -1330,12 +1357,21 @@ fail_nopgd:
 struct mm_struct *mm_alloc(void)
 {
 	struct mm_struct *mm;
+#ifdef CONFIG_CONT_PTE_HUGEPAGE
+	unsigned long rsv1;
+#endif
 
 	mm = allocate_mm();
 	if (!mm)
 		return NULL;
 
+#ifdef CONFIG_CONT_PTE_HUGEPAGE
+	rsv1 = mm->android_kabi_reserved1;
+#endif
 	memset(mm, 0, sizeof(*mm));
+#ifdef CONFIG_CONT_PTE_HUGEPAGE
+	mm->android_kabi_reserved1 = rsv1;
+#endif
 	return mm_init(mm, current, current_user_ns());
 }
 
@@ -1680,12 +1716,23 @@ static struct mm_struct *dup_mm(struct task_struct *tsk,
 {
 	struct mm_struct *mm;
 	int err;
+#ifdef CONFIG_CONT_PTE_HUGEPAGE
+	unsigned long rsv1;
+#endif
 
 	mm = allocate_mm();
 	if (!mm)
 		goto fail_nomem;
 
+#ifdef CONFIG_CONT_PTE_HUGEPAGE
+	rsv1 = mm->android_kabi_reserved1;
+#endif
 	memcpy(mm, oldmm, sizeof(*mm));
+#ifdef CONFIG_CONT_PTE_HUGEPAGE
+	memcpy((void *)rsv1, (void *)oldmm->android_kabi_reserved1,
+	       sizeof(struct chp_vma_name_address));
+	mm->android_kabi_reserved1 = rsv1;
+#endif
 
 	if (!mm_init(mm, tsk, mm->user_ns))
 		goto fail_nomem;

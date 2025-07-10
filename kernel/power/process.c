@@ -202,7 +202,9 @@ void thaw_processes(void)
 	__usermodehelper_set_disable_depth(UMH_FREEZING);
 	thaw_workqueues();
 
+	pr_info("[MTK_debug] checkporint start hotplug\n");
 	cpuset_wait_for_hotplug();
+	pr_info("[MTK_debug] checkporint end hotplug\n");
 
 	read_lock(&tasklist_lock);
 	for_each_process_thread(g, p) {
@@ -216,6 +218,7 @@ void thaw_processes(void)
 	curr->flags &= ~PF_SUSPEND_TASK;
 
 	usermodehelper_enable();
+	pr_info("[MTK_debug] checkporint end usermodehelper\n");
 
 	schedule();
 	pr_cont("done.\n");

@@ -469,7 +469,6 @@ next:
 		unlock_uid(usw->uid);
 		kfree(usw);
 	}
-
 }
 static DECLARE_WORK(update_stats_work, update_stats_workfn);
 

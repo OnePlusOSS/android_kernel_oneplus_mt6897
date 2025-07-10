@@ -27,5 +27,8 @@ source "drivers/soc/ti/Kconfig"
 source "drivers/soc/ux500/Kconfig"
 source "drivers/soc/versatile/Kconfig"
 source "drivers/soc/xilinx/Kconfig"
-
+source "drivers/soc/oplus/oplus_resctrl/Kconfig"
+#ifdef OPLUS_FEATURE_STORAGE_IO_METRICS
+source "drivers/soc/oplus/storage/Kconfig"
+#endif /*OPLUS_FEATURE_STORAGE_IO_METRICS*/
 endmenu

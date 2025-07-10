@@ -14,6 +14,12 @@
 #include <linux/tracepoint-defs.h>
 
 struct folio_batch;
+#ifdef CONFIG_BLOCKIO_UX_OPT
+bool mem_available_is_low(void);
+void set_fileprotect_page(struct folio *folio);
+bool mapping_protect(struct address_space *mapping);
+bool should_be_protect(struct folio *folio, bool mem_is_low);
+#endif
 
 /*
  * The set of flags that only affect watermark checking and reclaim

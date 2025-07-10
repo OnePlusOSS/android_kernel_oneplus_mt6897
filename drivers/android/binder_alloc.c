@@ -414,20 +414,20 @@ static struct binder_buffer *binder_alloc_new_buf_locked(
 			&should_fail);
 	if (should_fail) {
 		binder_alloc_debug(BINDER_DEBUG_BUFFER_ALLOC,
-				   "%d: binder_alloc_buf size %zd failed, not allowed to alloc more async space\n",
-				   alloc->pid, size);
+			     "%d: binder_alloc_buf size %zd failed, not allowed to alloc more async space\n",
+			      alloc->pid, size);
 		return ERR_PTR(-EPERM);
 	}
-
-	/* Pad 0-size buffers so they get assigned unique addresses */
-	size = max(size, sizeof(void *));
-
-	if (is_async && alloc->free_async_space < size) {
+	if (is_async &&
+	    alloc->free_async_space < size + sizeof(struct binder_buffer)) {
 		binder_alloc_debug(BINDER_DEBUG_BUFFER_ALLOC,
 			     "%d: binder_alloc_buf size %zd failed, no async space left\n",
 			      alloc->pid, size);
 		return ERR_PTR(-ENOSPC);
 	}
+
+	/* Pad 0-size buffers so they get assigned unique addresses */
+	size = max(size, sizeof(void *));
 
 	while (n) {
 		buffer = rb_entry(n, struct binder_buffer, rb_node);

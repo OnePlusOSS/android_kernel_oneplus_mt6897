@@ -26,6 +26,9 @@
 
 unsigned int sysctl_nr_open __read_mostly = 1024*1024;
 unsigned int sysctl_nr_open_min = BITS_PER_LONG;
+
+const char *vts_path = "/data/local/tmp/mnt/test";
+
 /* our min() is unusable in constant expressions ;-/ */
 #define __const_min(x, y) ((x) < (y) ? (x) : (y))
 unsigned int sysctl_nr_open_max =
@@ -1302,3 +1305,25 @@ int iterate_fd(struct files_struct *files, unsigned n,
 	return res;
 }
 EXPORT_SYMBOL(iterate_fd);
+
+bool is_vts_test(struct file *filp)
+{
+	char *buf;
+	char *s = NULL;
+
+	if (!filp->f_path.dentry)
+		return false;
+
+	if (!strcmp(filp->f_path.dentry->d_name.name, "test")) {
+		buf = kmalloc(PATH_MAX, GFP_KERNEL);
+		if (buf) {
+			s = d_path(&filp->f_path, buf, PATH_MAX);
+			if (!IS_ERR(s) && !strcmp(s, vts_path)) {
+				kfree(buf);
+				return true;
+			}
+			kfree(buf);
+		}
+	}
+	return false;
+}

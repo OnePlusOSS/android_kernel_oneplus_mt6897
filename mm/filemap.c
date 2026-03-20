@@ -870,6 +870,7 @@ noinline int __filemap_add_folio(struct address_space *mapping,
 	VM_BUG_ON_FOLIO(folio_test_swapbacked(folio), folio);
 	mapping_set_update(&xas, mapping);
 
+	trace_android_vh_filemap_add_folio(mapping, folio, index);
 	if (!huge) {
 		int error = mem_cgroup_charge(folio, NULL, gfp);
 		VM_BUG_ON_FOLIO(index & (folio_nr_pages(folio) - 1), folio);
@@ -959,6 +960,10 @@ unlock:
 
 	if (xas_error(&xas))
 		goto error;
+#ifdef CONFIG_BLOCKIO_UX_OPT
+	if (mapping_protect(mapping))
+		set_fileprotect_page(folio);
+#endif
 
 	trace_mm_filemap_add_to_page_cache(folio);
 	return 0;
@@ -1242,6 +1247,76 @@ enum behavior {
 			 */
 };
 
+#ifdef CONFIG_BLOCKIO_UX_OPT
+extern void dm_bufio_shrink_scan_bypass(unsigned long task, bool *process);
+static inline void __add_wait_queue_entry_sort(struct wait_queue_head *wq_head, struct wait_queue_entry *wq_entry)
+{
+	struct list_head *pos;
+	bool is_highpro_process = false;
+
+	dm_bufio_shrink_scan_bypass((unsigned long)current, &is_highpro_process);
+	if (is_highpro_process)
+		goto add_tail;
+
+	list_for_each(pos, &wq_head->head) {
+		struct wait_queue_entry *wait = container_of(pos, struct wait_queue_entry, entry);
+
+		if (IS_ERR_OR_NULL(wait))
+			continue;
+		dm_bufio_shrink_scan_bypass((unsigned long)wait->private, &is_highpro_process);
+		if (is_highpro_process) {
+			list_add(&wq_entry->entry, pos->prev);
+			return;
+		}
+	}
+
+add_tail:
+	list_add_tail(&wq_entry->entry, &wq_head->head);
+}
+
+static int highprio_task_queue(struct wait_queue_head *wq_head)
+{
+	struct list_head *pos;
+
+	list_for_each(pos, &wq_head->head) {
+		struct wait_queue_entry *wait = container_of(pos, struct wait_queue_entry, entry);
+		bool is_highpro_process = false;
+
+		if (IS_ERR_OR_NULL(wait) || IS_ERR_OR_NULL(wait->private))
+			continue;
+
+		dm_bufio_shrink_scan_bypass((unsigned long)wait->private, &is_highpro_process);
+		if (is_highpro_process)
+			return true;
+	}
+
+	return false;
+}
+
+bool should_queue_work_ux(struct bio *bio)
+{
+	struct bio_vec *bvec;
+	unsigned long flags;
+	struct bvec_iter_all iter_all;
+
+	bio_for_each_segment_all(bvec, bio, iter_all) {
+		struct page *page = bvec->bv_page;
+		struct folio *folio = page_folio(page);
+		wait_queue_head_t *q = folio_waitqueue(folio);
+
+		spin_lock_irqsave(&q->lock, flags);
+
+		if (highprio_task_queue(q)) {
+			spin_unlock_irqrestore(&q->lock, flags);
+			return true;
+		}
+
+		spin_unlock_irqrestore(&q->lock, flags);
+	}
+
+	return false;
+}
+#endif
 /*
  * Attempt to check (or get) the folio flag, and mark us done
  * if successful.
@@ -1310,7 +1385,11 @@ repeat:
 	spin_lock_irq(&q->lock);
 	folio_set_waiters(folio);
 	if (!folio_trylock_flag(folio, bit_nr, wait))
+#ifdef CONFIG_BLOCKIO_UX_OPT
+		__add_wait_queue_entry_sort(q, wait);
+#else
 		__add_wait_queue_entry_tail(q, wait);
+#endif
 	spin_unlock_irq(&q->lock);
 
 	/*
@@ -1574,6 +1653,30 @@ void folio_unlock(struct folio *folio)
 		folio_wake_bit(folio, PG_locked);
 }
 EXPORT_SYMBOL(folio_unlock);
+
+#ifdef CONFIG_CONT_PTE_HUGEPAGE
+void unlock_nr_folios(struct folio **folio, int nr)
+{
+	int i;
+
+	BUILD_BUG_ON(PG_waiters != 7);
+
+	for (i = 0; i < nr; i++) {
+		VM_BUG_ON_FOLIO(!folio_test_locked(folio[i]), folio[i]);
+
+#if defined(CONFIG_CONT_PTE_HUGEPAGE) && defined(CONFIG_CONT_PTE_HUGEPAGE_DEBUG_VERBOSE)
+		if (!PageLocked(page[i])) {
+			pr_err("@@@Fixme: unlocking an unlocked page %s page:%lx flags:%lx pfn:%lx\n",
+					__func__, folio[i], folio[i]->flags, folio_pfn(folio[i]));
+			WARN_ON(1);
+		}
+#endif
+		if (clear_bit_unlock_is_negative_byte(PG_locked, folio_flags(folio[i], 0)))
+			folio_wake_bit(folio[i], PG_locked);
+
+	}
+}
+#endif /* CONFIG_CONT_PTE_HUGEPAGE */
 
 /**
  * folio_end_private_2 - Clear PG_private_2 and wake any waiters.
@@ -2762,7 +2865,7 @@ ssize_t filemap_read(struct kiocb *iocb, struct iov_iter *iter,
 	if (unlikely(!iov_iter_count(iter)))
 		return 0;
 
-	iov_iter_truncate(iter, inode->i_sb->s_maxbytes);
+	iov_iter_truncate(iter, inode->i_sb->s_maxbytes - iocb->ki_pos);
 	folio_batch_init(&fbatch);
 	trace_android_vh_filemap_read(filp, iocb->ki_pos, iov_iter_count(iter));
 
@@ -2963,7 +3066,7 @@ static inline loff_t folio_seek_hole_data(struct xa_state *xas,
 		if (ops->is_partially_uptodate(folio, offset, bsz) ==
 							seek_data)
 			break;
-		start = (start + bsz) & ~(bsz - 1);
+		start = (start + bsz) & ~((u64)bsz - 1);
 		offset += bsz;
 	} while (offset < folio_size(folio));
 unlock:
@@ -3468,12 +3571,19 @@ vm_fault_t filemap_map_pages(struct vm_fault *vmf,
 	unsigned int mmap_miss = READ_ONCE(file->f_ra.mmap_miss);
 	vm_fault_t ret = 0;
 	pgoff_t first_pgoff = 0;
+#ifdef CONFIG_F2FS_APPBOOST
+	char *pathbuf = NULL;
+        if (trace_filemap_map_pages_enabled())
+                pathbuf = kmalloc(PATH_MAX, GFP_KERNEL);
+#endif
+	pgoff_t orig_start_pgoff = start_pgoff;
 
 	rcu_read_lock();
 	folio = first_map_page(mapping, &xas, end_pgoff);
 	if (!folio)
 		goto out;
 	first_pgoff = xas.xa_index;
+	orig_start_pgoff = xas.xa_index;
 
 	if (filemap_map_pmd(vmf, &folio->page)) {
 		ret = VM_FAULT_NOPAGE;
@@ -3515,6 +3625,16 @@ again:
 			folio_ref_inc(folio);
 			goto again;
 		}
+#ifdef CONFIG_F2FS_APPBOOST
+		if (trace_filemap_map_pages_enabled() && pathbuf) {
+			if (mapping->host && mapping->host->i_sb
+					&& mapping->host->i_sb->s_magic == F2FS_SUPER_MAGIC) {
+				char *path = d_path(&file->f_path, pathbuf, PATH_MAX);
+				if (!IS_ERR(path))
+					trace_filemap_map_pages(mapping->host, page, path);
+			}
+		}
+#endif
 		folio_unlock(folio);
 		continue;
 unlock:
@@ -3528,8 +3648,13 @@ unlock:
 	pte_unmap_unlock(vmf->pte, vmf->ptl);
 out:
 	rcu_read_unlock();
+#ifdef CONFIG_F2FS_APPBOOST
+        if (pathbuf)
+                kfree(pathbuf);
+#endif
 	WRITE_ONCE(file->f_ra.mmap_miss, mmap_miss);
 	trace_android_vh_filemap_map_pages(file, first_pgoff, last_pgoff, ret);
+	trace_android_vh_filemap_map_pages_range(file, orig_start_pgoff, last_pgoff, ret);
 
 	return ret;
 }
@@ -3892,6 +4017,7 @@ again:
 			if (unlikely(status < 0))
 				break;
 		}
+		trace_android_vh_io_statistics(mapping, page->index, 1, false, false);
 		cond_resched();
 
 		if (unlikely(status == 0)) {

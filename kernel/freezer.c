@@ -201,6 +201,9 @@ static int __restore_freezer_state(struct task_struct *p, void *arg)
 void __thaw_task(struct task_struct *p)
 {
 	unsigned long flags;
+	ktime_t start, end, elapsed;
+
+	start = ktime_get_boottime();
 
 	spin_lock_irqsave(&freezer_lock, flags);
 	if (WARN_ON_ONCE(freezing(p)))
@@ -212,6 +215,10 @@ void __thaw_task(struct task_struct *p)
 	wake_up_state(p, TASK_FROZEN);
 unlock:
 	spin_unlock_irqrestore(&freezer_lock, flags);
+	end = ktime_get_boottime();
+	elapsed = ktime_sub(end, start);
+	if ((unsigned long long)elapsed > 1000000000)
+		pr_info("[MTK_debug] pid %d tgid %d %s thaw latency %Ld nsecs", p->pid, p->tgid, p->comm, (unsigned long long)elapsed);
 }
 
 /**

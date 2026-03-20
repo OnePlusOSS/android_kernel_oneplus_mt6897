@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0
 VERSION = 6
 PATCHLEVEL = 1
-SUBLEVEL = 115
+SUBLEVEL = 134
 EXTRAVERSION =
 NAME = Curry Ramen
 
@@ -780,6 +780,14 @@ ifndef KBUILD_MIXED_TREE
 all: vmlinux
 endif
 
+ifdef CONFIG_ARCH_SUPPORTS_PGO_CLANG
+ifneq ($(KCFLAGS_PGO),)
+CFLAGS_PGO_CLANG := $(KCFLAGS_PGO)
+endif
+export CFLAGS_PGO_CLANG
+$(info pgo flags: $(CFLAGS_PGO_CLANG))
+endif
+
 CFLAGS_GCOV	:= -fprofile-arcs -ftest-coverage
 ifdef CONFIG_CC_IS_GCC
 CFLAGS_GCOV	+= -fno-tree-loop-im
@@ -1014,7 +1022,11 @@ CC_FLAGS_LTO	+= -fvisibility=default
 endif
 
 # Limit inlining across translation units to reduce binary size
+ifdef CONFIG_ARCH_SUPPORTS_PGO_CLANG
+KBUILD_LDFLAGS += -mllvm -import-instr-limit=60
+else
 KBUILD_LDFLAGS += -mllvm -import-instr-limit=5
+endif
 
 # Check for frame size exceeding threshold during prolog/epilog insertion
 # when using lld < 13.0.0.
@@ -1155,6 +1167,11 @@ endif
 KBUILD_USERCFLAGS  += $(filter -m32 -m64 --target=%, $(KBUILD_CFLAGS))
 KBUILD_USERLDFLAGS += $(filter -m32 -m64 --target=%, $(KBUILD_CFLAGS))
 
+# userspace programs are linked via the compiler, use the correct linker
+ifeq ($(CONFIG_CC_IS_CLANG)$(CONFIG_LD_IS_LLD),yy)
+KBUILD_USERLDFLAGS += $(call cc-option, --ld-path=$(LD))
+endif
+
 # make the checker run with the right architecture
 CHECKFLAGS += --arch=$(ARCH)
 
@@ -1191,6 +1208,11 @@ export INSTALL_DTBS_PATH ?= $(INSTALL_PATH)/dtbs/$(KERNELRELEASE)
 
 MODLIB	= $(INSTALL_MOD_PATH)/lib/modules/$(KERNELRELEASE)
 export MODLIB
+
+#ifdef OPLUS_FEATURE_CHG_BASIC
+##/* add for oplus charge */
+KBUILD_CFLAGS += -DOPLUS_FEATURE_CHG_BASIC
+#endif
 
 PHONY += prepare0
 
@@ -1887,11 +1909,6 @@ rustfmt:
 rustfmtcheck: rustfmt_flags = --check
 rustfmtcheck: rustfmt
 
-# IDE support targets
-PHONY += rust-analyzer
-rust-analyzer:
-	$(Q)$(MAKE) $(build)=rust $@
-
 # Misc
 # ---------------------------------------------------------------------------
 
@@ -1946,6 +1963,7 @@ help:
 	@echo  '  headers_install - Install sanitised kernel headers to INSTALL_HDR_PATH'
 	@echo  '                    (default: $(abspath $(INSTALL_HDR_PATH)))'
 	@echo  '  clean           - remove generated files in module directory only'
+	@echo  '  rust-analyzer	  - generate rust-project.json rust-analyzer support file'
 	@echo  ''
 
 endif # KBUILD_EXTMOD
@@ -2083,6 +2101,11 @@ quiet_cmd_tags = GEN     $@
 
 tags TAGS cscope gtags: FORCE
 	$(call cmd,tags)
+
+# IDE support targets
+PHONY += rust-analyzer
+rust-analyzer:
+	$(Q)$(MAKE) $(build)=rust $@
 
 # Script to generate missing namespace dependencies
 # ---------------------------------------------------------------------------

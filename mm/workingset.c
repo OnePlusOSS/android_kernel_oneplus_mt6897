@@ -16,6 +16,7 @@
 #include <linux/dax.h>
 #include <linux/fs.h>
 #include <linux/mm.h>
+#include <trace/hooks/mm.h>
 
 /*
  *		Double CLOCK lists
@@ -234,6 +235,7 @@ static void *lru_gen_eviction(struct folio *folio)
 
 	BUILD_BUG_ON(LRU_GEN_WIDTH + LRU_REFS_WIDTH > BITS_PER_LONG - EVICTION_SHIFT);
 
+	/* FIXME: chp doesn't care */
 	lruvec = mem_cgroup_lruvec(memcg, pgdat);
 	lrugen = &lruvec->lrugen;
 	min_seq = READ_ONCE(lrugen->min_seq[type]);
@@ -270,6 +272,7 @@ static void lru_gen_refault(struct folio *folio, void *shadow)
 	if (memcg_id != mem_cgroup_id(memcg))
 		goto unlock;
 
+	/* FIXME: chp doesn't care */
 	lruvec = mem_cgroup_lruvec(memcg, pgdat);
 	lrugen = &lruvec->lrugen;
 
@@ -366,7 +369,12 @@ void *workingset_eviction(struct folio *folio, struct mem_cgroup *target_memcg)
 	if (lru_gen_enabled())
 		return lru_gen_eviction(folio);
 
-	lruvec = mem_cgroup_lruvec(target_memcg, pgdat);
+#if defined(CONFIG_CONT_PTE_HUGEPAGE) && CONFIG_CONT_PTE_HUGEPAGE_LRU
+	if (ContPteExtLRUHugeFolio(folio))
+		lruvec = mem_cgroup_chp_lruvec(target_memcg, pgdat);
+	else
+#endif
+		lruvec = mem_cgroup_lruvec(target_memcg, pgdat);
 	/* XXX: target_memcg can be NULL, go through lruvec */
 	memcgid = mem_cgroup_id(lruvec_memcg(lruvec));
 	eviction = atomic_long_read(&lruvec->nonresident_age);
@@ -401,6 +409,8 @@ void workingset_refault(struct folio *folio, void *shadow)
 	int memcgid;
 	long nr;
 
+	trace_android_vh_count_workingset_refault(folio);
+
 	if (lru_gen_enabled()) {
 		lru_gen_refault(folio, shadow);
 		return;
@@ -408,6 +418,9 @@ void workingset_refault(struct folio *folio, void *shadow)
 
 	unpack_shadow(shadow, &memcgid, &pgdat, &eviction, &workingset);
 	eviction <<= bucket_order;
+
+	/* Flush stats (and potentially sleep) before holding RCU read lock */
+	mem_cgroup_flush_stats_ratelimited();
 
 	rcu_read_lock();
 	/*
@@ -429,7 +442,12 @@ void workingset_refault(struct folio *folio, void *shadow)
 	eviction_memcg = mem_cgroup_from_id(memcgid);
 	if (!mem_cgroup_disabled() && !eviction_memcg)
 		goto out;
-	eviction_lruvec = mem_cgroup_lruvec(eviction_memcg, pgdat);
+#if defined(CONFIG_CONT_PTE_HUGEPAGE) && CONFIG_CONT_PTE_HUGEPAGE_LRU
+	if (ContPteExtLRUHugeFolio(folio))
+		eviction_lruvec = mem_cgroup_chp_lruvec(eviction_memcg, pgdat);
+	else
+#endif
+		eviction_lruvec = mem_cgroup_lruvec(eviction_memcg, pgdat);
 	refault = atomic_long_read(&eviction_lruvec->nonresident_age);
 
 	/*
@@ -460,11 +478,14 @@ void workingset_refault(struct folio *folio, void *shadow)
 	 */
 	nr = folio_nr_pages(folio);
 	memcg = folio_memcg(folio);
-	lruvec = mem_cgroup_lruvec(memcg, pgdat);
+#if defined(CONFIG_CONT_PTE_HUGEPAGE) && CONFIG_CONT_PTE_HUGEPAGE_LRU
+	if (ContPteExtLRUHugeFolio(folio))
+		lruvec = mem_cgroup_chp_lruvec(memcg, pgdat);
+	else
+#endif
+		lruvec = mem_cgroup_lruvec(memcg, pgdat);
 
 	mod_lruvec_state(lruvec, WORKINGSET_REFAULT_BASE + file, nr);
-
-	mem_cgroup_flush_stats_delayed();
 	/*
 	 * Compare the distance to the existing workingset size. We
 	 * don't activate pages that couldn't stay resident even if
@@ -606,7 +627,7 @@ static unsigned long count_shadow_nodes(struct shrinker *shrinker,
 	if (sc->memcg) {
 		struct lruvec *lruvec;
 		int i;
-
+		/* FIXME: chp doesn't care? */
 		lruvec = mem_cgroup_lruvec(sc->memcg, NODE_DATA(sc->nid));
 		for (pages = 0, i = 0; i < NR_LRU_LISTS; i++)
 			pages += lruvec_page_state_local(lruvec,

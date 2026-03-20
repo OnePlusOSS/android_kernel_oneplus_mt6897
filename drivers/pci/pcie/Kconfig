@@ -145,6 +145,7 @@ config PCIE_EDR
 
 config PCIE_PATCH_BACK
 	bool "PCIe upstream patch back"
+	default y
 	help
 	  This option enables a mechanism to separate the PCI framework patches
 	  that are intended for the ACK submission but have not yet been merged.

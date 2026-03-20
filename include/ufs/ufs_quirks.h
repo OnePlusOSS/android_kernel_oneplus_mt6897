@@ -113,4 +113,10 @@ struct ufs_dev_quirk {
  */
 #define UFS_DEVICE_QUIRK_SWAP_L2P_ENTRY_FOR_HPB_READ (1 << 12)
 
+/*
+ * Samsung QLC ufs device needs a different set of drivers for HID and TW.
+ * Enable this quirk to config QLC HID & TW on.
+ */
+#define UFS_DEVICE_QUIRK_SAMSUNG_QLC            (1 << 13)
+
 #endif /* UFS_QUIRKS_H_ */

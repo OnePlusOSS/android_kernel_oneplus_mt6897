@@ -99,6 +99,7 @@ filegroup(
     name = "aarch64_additional_kmi_symbol_lists",
     srcs = [
         # keep sorted
+        "android/abi_gki_aarch64_arg",
         "android/abi_gki_aarch64_asr",
         "android/abi_gki_aarch64_asus",
         "android/abi_gki_aarch64_bcmstb",
@@ -115,6 +116,7 @@ filegroup(
         "android/abi_gki_aarch64_mtk",
         "android/abi_gki_aarch64_nothing",
         "android/abi_gki_aarch64_oplus",
+        "android/abi_gki_aarch64_paragon",
         "android/abi_gki_aarch64_pasa",
         "android/abi_gki_aarch64_pixel",
         "android/abi_gki_aarch64_qcom",
@@ -129,6 +131,7 @@ filegroup(
         "android/abi_gki_aarch64_virtual_device",
         "android/abi_gki_aarch64_vivo",
         "android/abi_gki_aarch64_xiaomi",
+        "android/abi_gki_aarch64_zebra",
     ],
     visibility = ["//visibility:public"],
 )
@@ -831,6 +834,30 @@ ddk_headers(
     visibility = ["//visibility:public"],
 )
 
+# oplus modules depend on ack need headers add here
+# globs() for all architectures
+filegroup(
+    name = "all_headers_allowlist_common_globs_oplus",
+    srcs = glob([
+        "kernel/**/*.h",
+        "fs/**/*.h",
+        "**/**/*.h",
+        "mm/*.h",
+    ]),
+    visibility = ["//visibility:private"],
+)
+# oplus modules depend on ack need directory add here
+linux_includes_oplus = [
+    "include",
+    "include/linux",
+    "include/trace",
+    "kernel",
+    "fs/proc",
+    "fs",
+    "mm",
+    ".",
+]
+
 # Implementation details for DDK headers. The targets below cannot be directly
 # depended on by DDK modules.
 
@@ -841,6 +868,7 @@ ddk_headers(
     hdrs = [
         ":all_headers_allowlist_aarch64_globs",
         ":all_headers_allowlist_common_globs",
+        ":all_headers_allowlist_common_globs_oplus",
     ],
     # The list of include directories where source files can #include headers
     # from. In other words, these are the `-I` option to the C compiler.
@@ -850,7 +878,7 @@ ddk_headers(
         "arch/arm64/include/uapi",
         "include",
         "include/uapi",
-    ],
+    ] + linux_includes_oplus,
     visibility = ["//visibility:private"],
 )
 

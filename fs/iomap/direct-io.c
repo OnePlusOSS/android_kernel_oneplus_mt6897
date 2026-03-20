@@ -12,6 +12,9 @@
 #include <linux/backing-dev.h>
 #include <linux/uio.h>
 #include <linux/task_io_accounting_ops.h>
+#ifndef __GENKSYMS__
+#include <trace/hooks/mm.h>
+#endif
 #include "trace.h"
 
 #include "../internal.h"
@@ -320,9 +323,18 @@ static loff_t iomap_dio_bio_iter(const struct iomap_iter *iter,
 			goto out;
 		}
 
+		trace_android_vh_io_statistics(inode->i_mapping, pos >> inode->i_blkbits,
+					nr_pages, !(dio->flags & IOMAP_DIO_WRITE), true);
+
 		bio = iomap_dio_alloc_bio(iter, dio, nr_pages, bio_opf);
+#ifdef CONFIG_F2FS_SEQZONE
+		fscrypt_set_bio_crypt_ctx(bio, inode, iomap->android_kabi_reserved1 ?
+				  (loff_t)(iomap->android_kabi_reserved1) : pos >> inode->i_blkbits,
+				  GFP_KERNEL);
+#else
 		fscrypt_set_bio_crypt_ctx(bio, inode, pos >> inode->i_blkbits,
 					  GFP_KERNEL);
+#endif
 		bio->bi_iter.bi_sector = iomap_sector(iomap, pos);
 		bio->bi_ioprio = dio->iocb->ki_ioprio;
 		bio->bi_private = dio;

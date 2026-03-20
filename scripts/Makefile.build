@@ -30,6 +30,12 @@ rustflags-y :=
 cppflags-y :=
 ldflags-y  :=
 
+#ifdef OPLUS_FEATURE_CHG_BASIC
+#oplus add for charging
+KBUILD_LDS_MODULE_ATTACH :=
+sub_objtool_obj :=
+#endif
+
 subdir-asflags-y :=
 subdir-ccflags-y :=
 
@@ -157,10 +163,17 @@ ifdef CONFIG_LTO_CLANG
 cmd_ld_single_m = $(if $(is-single-obj-m), ; $(LD) $(ld_flags) -r -o $(tmp-target) $@; mv $(tmp-target) $@)
 endif
 
+ifneq ($(CFLAGS_PGO_CLANG),)
+quiet_cmd_cc_o_c = CC $(quiet_modtag)  $@
+      cmd_cc_o_c = $(CC) $(c_flags) -c -o $@ $(patsubst $(srctree)/%,source/%,$<) \
+		$(cmd_ld_single_m) \
+		$(cmd_objtool)
+else
 quiet_cmd_cc_o_c = CC $(quiet_modtag)  $@
       cmd_cc_o_c = $(CC) $(c_flags) -c -o $@ $< \
 		$(cmd_ld_single_m) \
 		$(cmd_objtool)
+endif
 
 ifdef CONFIG_MODVERSIONS
 # When module versioning is enabled the following steps are executed:
@@ -218,6 +231,14 @@ endif # CONFIG_FTRACE_MCOUNT_USE_RECORDMCOUNT
 is-standard-object = $(if $(filter-out y%, $(OBJECT_FILES_NON_STANDARD_$(basetarget).o)$(OBJECT_FILES_NON_STANDARD)n),y)
 
 $(obj)/%.o: objtool-enabled = $(if $(is-standard-object),$(if $(delay-objtool),$(is-single-obj-m),y))
+## Rebuild all objects when objtool changes, or is enabled/disabled.
+#objtool_dep = $(objtool_obj)					\
+#	      $(wildcard include/config/ORC_UNWINDER		\
+#			 include/config/STACK_VALIDATION)
+##ifdef OPLUS_FEATURE_CHG_BASIC
+#objtool_dep += $(sub_objtool_obj)
+#$(info lhx print objtool_obj enter 2)
+##endif
 
 ifdef CONFIG_TRIM_UNUSED_KSYMS
 cmd_gen_ksymdeps = \
@@ -246,7 +267,8 @@ define rule_as_o_S
 endef
 
 # Built-in and composite module parts
-$(obj)/%.o: $(src)/%.c $(recordmcount_source) FORCE
+#$(obj)/%.o: $(src)/%.c $(recordmcount_source) FORCE
+$(obj)/%.o: $(src)/%.c $(recordmcount_source) $(sub_objtool_obj) FORCE
 	$(call if_changed_rule,cc_o_c)
 	$(call cmd,force_checksrc)
 
@@ -255,8 +277,18 @@ $(obj)/%.o: $(src)/%.c $(recordmcount_source) FORCE
 cmd_mod = printf '%s\n' $(call real-search, $*.o, .o, -objs -y -m) | \
 	$(AWK) '!x[$$0]++ { print("$(obj)/"$$0) }' > $@
 
+#ifdef OPLUS_FEATURE_CHG_BASIC
+#oplus add for charging
+cmd_mod_lds = $(if $(KBUILD_LDS_MODULE_ATTACH), cat $(srctree)/$(src)/$(firstword $(KBUILD_LDS_MODULE_ATTACH)) > $(@:.mod=.lds))
+#endif
+
 $(obj)/%.mod: FORCE
 	$(call if_changed,mod)
+
+#ifdef OPLUS_FEATURE_CHG_BASIC
+#oplus add for charging
+	$(call cmd,mod_lds)
+#endif
 
 # List module undefined symbols
 cmd_undefined_syms = $(NM) $< | sed -n 's/^  *U //p' > $@

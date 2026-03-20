@@ -21,7 +21,7 @@
 #include "iostat.h"
 #include <trace/events/f2fs.h>
 
-#define DEFAULT_CHECKPOINT_IOPRIO (IOPRIO_PRIO_VALUE(IOPRIO_CLASS_BE, 3))
+#define DEFAULT_CHECKPOINT_IOPRIO (IOPRIO_PRIO_VALUE(IOPRIO_CLASS_RT, 3))
 
 static struct kmem_cache *ino_entry_slab;
 struct kmem_cache *f2fs_inode_entry_slab;
@@ -705,6 +705,25 @@ static int recover_orphan_inode(struct f2fs_sb_info *sbi, nid_t ino)
 		iput(inode);
 		goto err_out;
 	}
+
+#ifdef CONFIG_F2FS_FS_DEDUP
+	if (is_inode_flag_set(inode, FI_REVOKE_DEDUP)) {
+		f2fs_notice(sbi, "recover orphan: ino[%u] set revoke, flags[%lu]",
+				ino, F2FS_I(inode)->flags[0]);
+		f2fs_bug_on(sbi, is_inode_flag_set(inode, FI_DOING_DEDUP));
+		err = f2fs_truncate_dedup_inode(inode, FI_REVOKE_DEDUP);
+		iput(inode);
+		return err;
+	}
+
+	if (is_inode_flag_set(inode, FI_DOING_DEDUP)) {
+		f2fs_notice(sbi, "recover orphan: ino[%u] set doing dedup, flags[%lu]",
+				ino, F2FS_I(inode)->flags[0]);
+		err = f2fs_truncate_dedup_inode(inode, FI_DOING_DEDUP);
+		iput(inode);
+		return err;
+	}
+#endif
 
 	clear_nlink(inode);
 
@@ -1598,8 +1617,9 @@ static int do_checkpoint(struct f2fs_sb_info *sbi, struct cp_control *cpc)
 	 */
 	if (f2fs_sb_has_encrypt(sbi) || f2fs_sb_has_verity(sbi) ||
 		f2fs_sb_has_compression(sbi))
-		invalidate_mapping_pages(META_MAPPING(sbi),
-				MAIN_BLKADDR(sbi), MAX_BLKADDR(sbi) - 1);
+		f2fs_bug_on(sbi,
+			invalidate_inode_pages2_range(META_MAPPING(sbi),
+				MAIN_BLKADDR(sbi), MAX_BLKADDR(sbi) - 1));
 
 	f2fs_release_ino_entry(sbi, false);
 

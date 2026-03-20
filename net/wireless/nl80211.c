@@ -811,7 +811,7 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_MLO_LINKS] =
 		NLA_POLICY_NESTED_ARRAY(nl80211_policy),
 	[NL80211_ATTR_MLO_LINK_ID] =
-		NLA_POLICY_RANGE(NLA_U8, 0, IEEE80211_MLD_MAX_NUM_LINKS),
+		NLA_POLICY_RANGE(NLA_U8, 0, IEEE80211_MLD_MAX_NUM_LINKS - 1),
 	[NL80211_ATTR_MLD_ADDR] = NLA_POLICY_EXACT_LEN(ETH_ALEN),
 	[NL80211_ATTR_MLO_SUPPORT] = { .type = NLA_FLAG },
 	[NL80211_ATTR_MAX_NUM_AKM_SUITES] = { .type = NLA_REJECT },
@@ -4075,6 +4075,11 @@ static int parse_monitor_flags(struct nlattr *nla, u32 *mntrflags)
 	for (flag = 1; flag <= NL80211_MNTR_FLAG_MAX; flag++)
 		if (flags[flag])
 			*mntrflags |= (1<<flag);
+
+	/* cooked monitor mode is incompatible with other modes */
+	if (*mntrflags & MONITOR_FLAG_COOK_FRAMES &&
+	    *mntrflags != MONITOR_FLAG_COOK_FRAMES)
+		return -EOPNOTSUPP;
 
 	*mntrflags |= MONITOR_FLAG_CHANGED;
 
@@ -8959,6 +8964,8 @@ nl80211_check_scan_flags(struct wiphy *wiphy, struct wireless_dev *wdev,
 	}
 
 	*flags = nla_get_u32(attrs[NL80211_ATTR_SCAN_FLAGS]);
+	/* oplus add scan debug log */
+	printk("nl80211_check_scan_flags:%u", *flags);
 
 	if (((*flags & NL80211_SCAN_FLAG_LOW_PRIORITY) &&
 	     !(wiphy->features & NL80211_FEATURE_LOW_PRIORITY_SCAN)) ||
@@ -8988,8 +8995,11 @@ nl80211_check_scan_flags(struct wiphy *wiphy, struct wireless_dev *wdev,
 				     NL80211_EXT_FEATURE_SCAN_RANDOM_SN) ||
 	    !nl80211_check_scan_feat(wiphy, *flags,
 				     NL80211_SCAN_FLAG_MIN_PREQ_CONTENT,
-				     NL80211_EXT_FEATURE_SCAN_MIN_PREQ_CONTENT))
+				     NL80211_EXT_FEATURE_SCAN_MIN_PREQ_CONTENT)) {
+		/* oplus add scan debug log */
+		printk("nl80211_check_scan_flags is not satisfied, return unspport");
 		return -EOPNOTSUPP;
+	}
 
 	if (*flags & NL80211_SCAN_FLAG_RANDOM_ADDR) {
 		int err;
@@ -9020,11 +9030,17 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 
 	wiphy = &rdev->wiphy;
 
-	if (wdev->iftype == NL80211_IFTYPE_NAN)
+	if (wdev->iftype == NL80211_IFTYPE_NAN) {
+		/* oplus add scan debug log */
+		printk("wdev iftype is nan, return unspport");
 		return -EOPNOTSUPP;
+	}
 
-	if (!rdev->ops->scan)
+	if (!rdev->ops->scan) {
+		/* oplus add scan debug log */
+		printk("rdev scan not registered, return unspport");
 		return -EOPNOTSUPP;
+	}
 
 	if (rdev->scan_req || rdev->scan_msg)
 		return -EBUSY;

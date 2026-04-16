@@ -15,6 +15,10 @@
   cpufreq_frequency_table_get_index
   cpufreq_policy_transition_delay_us
   cpufreq_update_util_data
+  css_task_iter_start
+  css_task_iter_next
+  css_task_iter_end
+  cpu_cgrp_subsys
   device_create_bin_file
   device_remove_bin_file
   devres_destroy
@@ -172,6 +176,8 @@
   __traceiter_android_vh_binder_wait_for_work
   __traceiter_android_vh_binder_detect_low_async_space
   __traceiter_android_vh_cgroup_set_task
+  __traceiter_android_vh_sched_move_task
+  __traceiter_android_vh_reweight_entity
   __traceiter_android_vh_check_folio_look_around_ref
   __traceiter_android_vh_dup_task_struct
   __traceiter_android_vh_exit_signal
@@ -274,6 +280,8 @@
   __tracepoint_android_vh_binder_wait_for_work
   __tracepoint_android_vh_binder_detect_low_async_space
   __tracepoint_android_vh_cgroup_set_task
+  __tracepoint_android_vh_sched_move_task
+  __tracepoint_android_vh_reweight_entity
   __tracepoint_android_vh_check_folio_look_around_ref
   __tracepoint_android_vh_do_futex
   __tracepoint_android_vh_dup_task_struct

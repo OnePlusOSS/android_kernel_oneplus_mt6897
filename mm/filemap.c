@@ -2393,6 +2393,7 @@ unsigned filemap_get_folios_contig(struct address_space *mapping,
 			*start = folio->index + nr;
 			goto out;
 		}
+		xas_advance(&xas, folio_next_index(folio) - 1);
 		continue;
 put_folio:
 		folio_put(folio);
@@ -3210,6 +3211,11 @@ static struct file *do_sync_mmap_readahead(struct vm_fault *vmf)
 	struct file *fpin = NULL;
 	unsigned long vm_flags = vmf->vma->vm_flags;
 	unsigned int mmap_miss;
+	bool skip = false;
+
+	trace_android_vh_do_sync_mmap_readahead(vmf, &skip);
+	if (skip)
+		return fpin;
 
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 	/* Use the readahead code, even if readahead is disabled */
@@ -3280,6 +3286,11 @@ static struct file *do_async_mmap_readahead(struct vm_fault *vmf,
 	DEFINE_READAHEAD(ractl, file, ra, file->f_mapping, vmf->pgoff);
 	struct file *fpin = NULL;
 	unsigned int mmap_miss;
+	bool skip = false;
+
+	trace_android_vh_do_async_mmap_readahead(vmf, folio, &skip);
+	if (skip)
+		return fpin;
 
 	/* If we don't want any read-ahead, don't bother */
 	if (vmf->vma->vm_flags & VM_RAND_READ || !ra->ra_pages)
@@ -3710,7 +3721,7 @@ int generic_file_mmap(struct file *file, struct vm_area_struct *vma)
  */
 int generic_file_readonly_mmap(struct file *file, struct vm_area_struct *vma)
 {
-	if ((vma->vm_flags & VM_SHARED) && (vma->vm_flags & VM_MAYWRITE))
+	if (vma_is_shared_maywrite(vma))
 		return -EINVAL;
 	return generic_file_mmap(file, vma);
 }

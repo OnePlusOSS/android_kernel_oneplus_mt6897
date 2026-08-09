@@ -82,6 +82,8 @@
 
 #define ZS_HANDLE_SIZE (sizeof(unsigned long))
 
+#define MAX(a, b) __cmp(max, a, b)
+
 /*
  * Object location (<PFN>, <obj_idx>) is encoded as
  * a single (unsigned long) handle value.
@@ -123,7 +125,6 @@
 #define ISOLATED_BITS	3
 #define MAGIC_VAL_BITS	8
 
-#define MAX(a, b) ((a) >= (b) ? (a) : (b))
 /* ZS_MIN_ALLOC_SIZE must be multiple of ZS_ALIGN */
 #define ZS_MIN_ALLOC_SIZE \
 	MAX(32, (ZS_MAX_PAGES_PER_ZSPAGE << PAGE_SHIFT >> OBJ_INDEX_BITS))
@@ -1048,6 +1049,9 @@ static struct zspage *alloc_zspage(struct zs_pool *pool,
 
 	if (!zspage)
 		return NULL;
+
+	if (!IS_ENABLED(CONFIG_COMPACTION))
+		gfp &= ~__GFP_MOVABLE;
 
 	zspage->magic = ZSPAGE_MAGIC;
 	migrate_lock_init(zspage);

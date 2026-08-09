@@ -440,6 +440,10 @@ next_packet_fifo_dequeue(struct snd_usb_endpoint *ep)
 static void push_back_to_ready_list(struct snd_usb_endpoint *ep,
 				    struct snd_urb_ctx *ctx)
 {
+	if (!ep || !ctx) {
+		pr_err("push_back_to_ready_list: ep or urb is NULL\n");
+		return;
+	}
 	unsigned long flags;
 
 	spin_lock_irqsave(&ep->lock, flags);
